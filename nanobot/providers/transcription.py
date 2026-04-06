@@ -26,7 +26,7 @@ class GroqTranscriptionProvider:
             file_path: Path to the audio file.
 
         Returns:
-            Transcribed text.
+            Transcribed text, or empty string on failure / hallucination.
         """
         if not self.api_key:
             logger.warning("Groq API key not configured for transcription")
@@ -43,6 +43,7 @@ class GroqTranscriptionProvider:
                     files = {
                         "file": (path.name, f),
                         "model": (None, "whisper-large-v3"),
+                        "language": (None, "zh"),  # avoid language auto-detection errors
                     }
                     headers = {
                         "Authorization": f"Bearer {self.api_key}",
@@ -57,7 +58,15 @@ class GroqTranscriptionProvider:
 
                     response.raise_for_status()
                     data = response.json()
-                    return data.get("text", "")
+                    text = data.get("text", "").strip()
+
+                    # Filter Whisper hallucinations produced on silent audio
+                    from jarvis.voice.utils import is_hallucination
+                    if is_hallucination(text):
+                        logger.debug("Groq STT: hallucination filtered: {!r}", text)
+                        return ""
+
+                    return text
 
         except Exception as e:
             logger.error("Groq transcription error: {}", e)
